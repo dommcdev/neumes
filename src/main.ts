@@ -16,6 +16,10 @@ const icon = (name: string) => {
     plus: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6M10 7v6"/>',
     minus: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6"/>',
     help: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M7 16h10"/>',
+    light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>',
+    dark: '<path d="M20.5 13A9 9 0 0 1 11 3.5 9 9 0 1 0 20.5 13Z"/>',
+    system: '<rect x="3" y="4" width="18" height="13" rx="1"/><path d="M8 21h8M12 17v4"/>',
+    about: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',
   };
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.save}</svg>`;
 };
@@ -35,7 +39,12 @@ document.querySelector('#app')!.innerHTML = `
     ${menuItem('zoom-in', 'Zoom in', 'plus', 'Ctrl +')}
     ${menuItem('zoom-out', 'Zoom out', 'minus', 'Ctrl −')}
     <hr>
+    <div class="theme-row"><span id="theme-label">Theme</span><div class="theme-options" role="group" aria-labelledby="theme-label">
+      ${['light', 'dark', 'system'].map(theme => `<button data-theme="${theme}" aria-label="${theme[0].toUpperCase() + theme.slice(1)} theme" title="${theme[0].toUpperCase() + theme.slice(1)}" aria-pressed="false">${icon(theme)}</button>`).join('')}
+    </div></div>
+    <hr>
     ${menuItem('shortcuts', 'Keyboard shortcuts', 'help', 'F1')}
+    ${menuItem('about', 'About Neumes', 'about')}
   </nav>
   <div class="file-label"></div>
   <main class="workspace" tabindex="-1" aria-label="Chant score editor">
@@ -62,6 +71,31 @@ let drag: { pointer: number; startX: number; startY: number; lastX: number; last
 let persistTimer: ReturnType<typeof setTimeout>;
 let recovered = false;
 const unsaved = () => !!editor && (editor.doc.dirty || recovered);
+
+type Theme = 'light' | 'dark' | 'system';
+let theme = (document.documentElement.dataset.themePreference || 'system') as Theme;
+const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(): void {
+  const dark = theme === 'dark' || (theme === 'system' && systemTheme.matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.themePreference = theme;
+  document.querySelector('meta[name="theme-color"]')!.setAttribute('content', dark ? '#171816' : '#f6f5f1');
+  document.querySelectorAll<HTMLImageElement>('img[src^="/logo.svg"]').forEach(img => {
+    img.src = dark ? '/logo.svg#dark' : '/logo.svg';
+  });
+  menu.querySelectorAll<HTMLButtonElement>('button[data-theme]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.theme === theme));
+  });
+}
+menu.querySelectorAll<HTMLButtonElement>('button[data-theme]').forEach(button => {
+  button.addEventListener('click', () => {
+    theme = button.dataset.theme as Theme;
+    try { localStorage.setItem('neumes-theme', theme); } catch {}
+    applyTheme();
+  });
+});
+systemTheme.addEventListener('change', applyTheme);
+applyTheme();
 
 function toast(message: string): void {
   document.querySelector('.toast')!.textContent = message;
@@ -288,6 +322,7 @@ async function action(name: string): Promise<void> {
   else if (name === 'save' || name === 'save-as') await save(name === 'save-as');
   else if (name === 'export-pdf') await exportPdf();
   else if (name === 'shortcuts') help();
+  else if (name === 'about') await question('About Neumes', 'Neumes is for adding accompaniment to Gregorian chant scores. Open a .gabc file, add chords above the notes, and save your score or export it to PDF.', [{ id: 'close', label: 'Close' }]);
   else if (name === 'zoom-in') setZoom(zoom * 1.15);
   else if (name === 'zoom-out') setZoom(zoom / 1.15);
   else if (name === 'undo') { editor?.undo(); refresh(); }

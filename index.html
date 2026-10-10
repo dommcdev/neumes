@@ -7,6 +7,17 @@
     <meta name="description" content="A quiet workspace for adding chords to Gregorian chant. Your GABC files stay on your device." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Neumes</title>
+    <script>
+      (() => {
+        let theme = 'system';
+        try { theme = localStorage.getItem('neumes-theme') || 'system'; } catch {}
+        if (!['light', 'dark', 'system'].includes(theme)) theme = 'system';
+        document.documentElement.dataset.themePreference = theme;
+        const dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#171816' : '#f6f5f1';
+      })();
+    </script>
     <script src="/vendor/exsurge.js"></script>
   </head>
   <body>
