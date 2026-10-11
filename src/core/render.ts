@@ -12,6 +12,7 @@ export interface Position {
   group: string;
   staff: number;
   x: number;
+  noteWidth: number;
   y: number;
   noteY: number;
   glyphX: number;
@@ -107,6 +108,7 @@ export function renderScore(doc: ScoreDocument, e: Exsurge, measure: TextMeasure
         const hookX = shorthand ? notation.notes.at(-1).bounds.x : 0;
         positions.push({ note: target.id, index: target.index, group: target.group, staff,
           x: 20 + notation.bounds.x + note.bounds.x,
+          noteWidth: note.bounds.width,
           glyphX: 20 + notation.bounds.x + hookX,
           y: baseline + chordY, noteY: baseline + note.bounds.y + note.bounds.height / 2 });
       }
@@ -128,7 +130,7 @@ export interface PlacedChord {
   bottom: number;
 }
 
-/** Pack chords within each neume horizontally; stagger collisions between groups.
+/** Center chords on their notes, pack within neumes, and stagger group collisions.
  * Only chord overlays move. Exsurge's chant geometry is never changed by edits.
  */
 export function layoutChords(doc: ScoreDocument, preview: Preview, measure: TextMeasurer, recalculate = true, packGroups = true): PlacedChord[] {
@@ -148,7 +150,8 @@ export function layoutChords(doc: ScoreDocument, preview: Preview, measure: Text
     if (recalculate) {
       if (packGroups) {
         const previous = previousByGroup.get(`${pos.staff}:${pos.group}`);
-        const packedX = previous ? Math.max(pos.x, previous.x + previous.width + 5) : pos.x;
+        const centeredX = pos.x + (pos.noteWidth - width) / 2;
+        const packedX = previous ? Math.max(centeredX, previous.x + previous.width + 5) : centeredX;
         chord.autoX = Math.round((packedX - pos.glyphX) * 1e6) / 1e6;
       }
       chord.autoRaise = 0;

@@ -175,7 +175,9 @@ export class ScoreDocument {
       } else { i++; continue; }
       const chord = content === undefined ? undefined : decode(content);
       if (chord) {
-        chord.autoX = autoX; chord.dx -= autoX;
+        chord.autoX = autoX;
+        // Subtracting fractional layout offsets can introduce floating-point noise.
+        chord.dx = Number((chord.dx - autoX).toPrecision(15));
         removals.push({ start: i, end, chord, repeat, tag: source.slice(i, end), before });
       }
       i = end;

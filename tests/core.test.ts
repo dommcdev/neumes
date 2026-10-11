@@ -111,6 +111,19 @@ describe('Exsurge geometry and shared editing', () => {
     expect(preview.positions.every(p => Number.isFinite(p.x) && Number.isFinite(p.noteY))).toBe(true);
     expect(preview.staves[0].svg).toContain('dropCap');
   });
+  test('chord labels of different lengths stay centered on the note after saving', () => {
+    for (const text of ['C', 'C#maj7', 'F♯sus4/C♯']) {
+      const { doc, preview, measure } = create('name:T;\n%%\n(c4) A(g) (::)\n');
+      doc.setChord('n1', text);
+      const [placed] = layoutChords(doc, preview, measure);
+      const pos = preview.positions[0];
+      expect(placed.x + placed.width / 2).toBeCloseTo(pos.x + pos.noteWidth / 2, 5);
+      const reloaded = new ScoreDocument(doc.serialize());
+      expect(layoutChords(reloaded, preview, measure, false)[0].x).toBeCloseTo(placed.x, 5);
+      doc.chords[0].dx = 4;
+      expect(layoutChords(doc, preview, measure)[0].x).toBeCloseTo(placed.x + 4, 5);
+    }
+  });
   test('same-neume chords sit side by side; chant geometry is immutable', () => {
     const { doc, preview, measure } = create();
     const before = structuredClone(preview);
