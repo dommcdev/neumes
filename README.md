@@ -5,7 +5,7 @@ the command-line interface (CLI) to edit `.gabc` files.
 
 ## Install and use the CLI
 
-Install [Bun](https://bun.sh). In the project directory, install the dependencies:
+In the project directory, install the dependencies:
 
 ```sh
 bun install
