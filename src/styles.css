@@ -1,4 +1,32 @@
 @font-face {
+  font-family: 'TeX Gyre Pagella';
+  src: url('/fonts/texgyrepagella-regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'TeX Gyre Pagella';
+  src: url('/fonts/texgyrepagella-bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+@font-face {
+  font-family: 'TeX Gyre Pagella';
+  src: url('/fonts/texgyrepagella-italic.otf') format('opentype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
+  font-family: 'TeX Gyre Pagella';
+  src: url('/fonts/texgyrepagella-bolditalic.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}
+@font-face {
   font-family: 'EB Garamond';
   src: url('/fonts/EBGaramond.ttf') format('truetype');
   font-weight: 400 800;
@@ -146,23 +174,24 @@ kbd { font-family: inherit; font-size: 11px; color: var(--subtle); white-space: 
 .workspace { width: 100%; height: 100%; overflow: auto; padding: 95px 40px 85px; outline: none; scrollbar-gutter: stable; }
 .paper-slot { position: relative; margin: 0 auto; min-width: 0; }
 .paper {
-  width: 940px;
+  width: 612px;
   background: var(--surface);
   box-shadow: 0 2px 14px #26241e0b;
   border: 1px solid var(--paper-border);
-  padding: 38px 39px 50px;
+  padding: 28.8px 44px 46.8px;
   transform-origin: top left;
   user-select: none;
 }
-.sheet-header { text-align: center; font-family: 'EB Garamond', serif; padding: 4px 20px 22px; color: var(--heading); }
-.sheet-heading { font-size: 23px; font-weight: 600; line-height: 1.35; margin: 0 0 7px; }
-.sheet-title { font-size: 42px; font-weight: 600; font-style: italic; line-height: 1.15; margin: 0; }
-.sheet-subtitle { font-size: 22px; font-weight: 500; font-style: italic; margin: 10px 0 0; }
-.staff { position: relative; width: 860px; margin-bottom: 22px; touch-action: none; }
-.engraving { position: absolute; left: 0; width: 860px; pointer-events: none; }
-.engraving > svg { display: block; filter: var(--engraving-filter); }
+.sheet-header, .overlay { text-rendering: geometricPrecision; font-kerning: normal; }
+.sheet-header { text-align: center; font-family: 'TeX Gyre Pagella', serif; padding: 0; color: var(--heading); }
+.sheet-heading { font-size: 13.9477px; font-weight: 700; line-height: 16.9365px; margin: 0; }
+.sheet-title { font-size: 23.9103px; font-weight: 700; font-style: italic; line-height: 28.8917px; margin: 0; }
+.sheet-subtitle { font-size: 11.9552px; font-weight: 700; font-style: italic; line-height: 14.944px; margin: 0; }
+.staff { position: relative; width: 522px; touch-action: none; }
+.engraving { position: absolute; left: 0; width: 522px; pointer-events: none; }
+.engraving > svg { display: block; overflow: visible; filter: var(--engraving-filter); }
 .overlay { position: absolute; left: 0; top: 0; overflow: visible; cursor: crosshair; }
-.overlay text { cursor: grab; font-family: 'EB Garamond', serif; font-size: 15px; font-weight: 700; fill: var(--ink); }
+.overlay text { cursor: grab; font-family: 'TeX Gyre Pagella', serif; font-size: 9px; font-weight: 700; fill: var(--ink); }
 .overlay .selected { fill: var(--selected); stroke: var(--selected-border); stroke-width: .7; }
 .overlay .cursor { stroke: var(--accent); stroke-width: 1.3; fill: var(--cursor-fill); }
 .overlay .note-target { fill: transparent; }
@@ -246,14 +275,15 @@ dialog p { font-size: 14px; line-height: 1.6; color: var(--muted); margin: 0 0 2
   .menu { left: 14px; top: 68px; }
   .file-label { right: 16px; top: 30px; }
 }
-@page { size: letter; margin: 12mm; }
+/* Engraving units are bp; CSS print pixels are 1/96 inch. */
+@page { size: letter; margin: .4in .625in .65in; }
 @media print {
   :root { background: white; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   body, #app, .workspace { height: auto; overflow: visible; background: white; }
   .menu-trigger, .menu, .file-label, .toast, .drop-cover, dialog { display: none !important; }
   .workspace { padding: 0; scrollbar-gutter: auto; }
-  .paper-slot { width: 714.4px !important; height: auto !important; }
-  .paper { transform: none !important; zoom: .76; box-shadow: none; border: 0; width: 940px; padding: 0 40px; }
+  .paper-slot { width: 696px !important; height: auto !important; }
+  .paper { transform: none !important; zoom: 1.3333333333; box-shadow: none; border: 0; width: 522px; padding: 0; }
   .paper { background: white; color: #24231f; }
   .sheet-header { color: #24231f; }
   .engraving > svg { filter: none; }

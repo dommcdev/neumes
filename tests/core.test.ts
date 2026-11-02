@@ -77,6 +77,40 @@ describe('lossless individual-note document', () => {
 });
 
 describe('Exsurge geometry and shared editing', () => {
+  test('Gregorio reference keeps physical staff, text and chord dimensions', () => {
+    const source = readFileSync(new URL('./fixtures/salve-regina.gabc', import.meta.url), 'utf8');
+    const { doc, preview, measure } = create(source);
+    expect(preview.width).toBe(522); // Letter minus two 0.625-inch margins.
+    expect(preview.staves).toHaveLength(8);
+    const line = preview.staves[0].svg;
+    const staffY = [...line.matchAll(/<line[^>]*y1="([^"]+)"[^>]*class="staffLine"/g)].map(m => Number(m[1]));
+    expect(staffY).toHaveLength(4);
+    expect(staffY[1] - staffY[0]).toBeCloseTo(12.45, 4);
+    expect(line).toContain('font-family:"TeX Gyre Pagella", serif');
+    expect(line).toContain('font-size:19.925280199252803px'); // 20 TeX pt.
+    expect(line).toContain('>Ant.</tspan>');
+    expect(doc.note(preview.positions.filter(p => p.staff === 0).at(-1)!.note).lyric).toBe('ae :');
+    doc.setChord('n1', 'Dm');
+    const [before] = layoutChords(doc, preview, measure);
+    Object.assign(doc.chords[0], { dx: 6, dy: 4 });
+    const [after] = layoutChords(doc, preview, measure, false);
+    expect(after.x - before.x).toBe(6);
+    expect(before.baseline - after.baseline).toBe(4);
+    const exported = doc.serialize();
+    expect(exported).toContain(`\\kern ${doc.chords[0].autoX + 6}bp`);
+    expect(exported).toContain('\\raise 4bp');
+    expect(scoreSvg(doc, preview, [after])).toContain('font-size="9" font-weight="bold">Dm</text>');
+    expect(new ScoreDocument(exported).music).toBe(source);
+  });
+  test('packing includes manual offsets without unnecessarily raising same-neume chords', () => {
+    const { doc, preview, measure } = create('name:T;\n%%\n(c4) A(gh) (::)\n');
+    doc.setChord('n1', 'C'); doc.setChord('n2', 'Dm');
+    doc.chords[1].dx = -1.5;
+    const placed = layoutChords(doc, preview, measure);
+    expect(placed[1].baseline).toBe(placed[0].baseline);
+    expect(placed[1].x - placed[0].x - placed[0].width).toBeCloseTo(4, 5);
+    expect(doc.chords[1].dx).toBe(-1.5);
+  });
   test('clear controls are hidden without changing note targets, lyrics or saved source', () => {
     const source = 'name:Clear test;\r\n%%\r\n(c4) Dó(ghg) <clear>*(,) bé<clear/>ne(hi) <clear /><clear>di(-gh/hsss/hvv) (::) % 😀 <clear>\r\n';
     const { doc, preview, measure } = create(source);

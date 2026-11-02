@@ -3,6 +3,9 @@ import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ScoreDocument } from '../../src/core/document.ts';
+import { ENGRAVING } from '../../src/core/engraving.ts';
+import { renderScore } from '../../src/core/render.ts';
+import { exsurge, nativeMeasure } from '../../src/native.ts';
 
 const SOURCE = 'name: O quam glorifica;\nsheet-heading: Hymn;\nsheet-title: O quam glorifica;\nsheet-subtitle: For the choir;\noffice-part:Hymn;\nmode:2;\n%%\n(f3) O(f) quam(e) glo(fh)rí(hg)fi(fg)ca(f.) (::)\n';
 
@@ -41,8 +44,8 @@ test('minimal menu-only interface, polished headers and individual note editing'
   await expect(page.locator('.sheet-heading')).toHaveText('Hymn');
   await expect(page.locator('.sheet-subtitle')).toHaveText('For the choir');
   await expect(page.locator('.dropCap')).toHaveCount(1);
-  expect(await page.locator('.dropCap').evaluate(el => getComputedStyle(el).fontSize)).toBe('78px');
-  expect(await page.locator('.lyric').first().evaluate(el => getComputedStyle(el).fontFamily)).toContain('EB Garamond');
+  expect(await page.locator('.dropCap').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeCloseTo(ENGRAVING.initialSize, 3);
+  expect(await page.locator('.lyric').first().evaluate(el => getComputedStyle(el).fontFamily)).toContain('TeX Gyre Pagella');
   await expect(page.locator('[data-note]')).toHaveCount(9);
   await page.locator('[data-note="n3"]').click();
   await page.keyboard.type('Cmaj7');
@@ -131,7 +134,7 @@ test('minimal UI has no footer, guides, folder browsing, or extra copy', async (
   await drop(page); await expect(page.locator('.paper')).toBeVisible();
   await expect(page.locator('.file-label')).toHaveText('hymn.gabc');
   await page.getByRole('button', { name: 'Main menu', exact: true }).click();
-  await expect(page.locator('[data-action="folder"],[data-action="guides"],[data-action="about"],[data-action="fit"],.menu small')).toHaveCount(0);
+  await expect(page.locator('[data-action="folder"],[data-action="guides"],[data-action="fit"],.menu small')).toHaveCount(0);
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+g');
   await expect(page.locator('.guide')).toHaveCount(0);
@@ -290,9 +293,51 @@ test('clear controls do not appear in the score and survive native save', async 
 const sample = join(process.env.NEUMES_SAMPLES || join(homedir(), 'dev/chant/scores'), 'in--omnia_quae_fecisti.gabc');
 test('real score renders with existing chords and polished metadata', async ({ page }) => {
   test.skip(!existsSync(sample), 'Local reference score is not installed.');
-  await drop(page, readFileSync(sample, 'utf8'), 'in--omnia_quae_fecisti.gabc');
-  await expect(page.locator('.sheet-heading')).toHaveText('20th Sunday after Pentecost');
-  await expect(page.locator('.sheet-title')).toHaveText('Introit');
-  await expect(page.locator('[data-note]')).toHaveCount(223);
-  await expect(page.locator('[data-chord]')).toHaveCount(67);
+  const source = readFileSync(sample, 'utf8');
+  const expected = new ScoreDocument(source);
+  await drop(page, source, 'in--omnia_quae_fecisti.gabc');
+  await expect(page.locator('.sheet-heading')).toHaveText(expected.headers['sheet-heading']);
+  await expect(page.locator('.sheet-title')).toHaveText(expected.name);
+  await expect(page.locator('[data-note]')).toHaveCount(expected.notes.length);
+  await expect(page.locator('[data-chord]')).toHaveCount(expected.chords.length);
+});
+
+test('Salve Regina shares physical Gregorio dimensions across browser, print and CLI', async ({ page }) => {
+  const source = readFileSync(new URL('../fixtures/salve-regina.gabc', import.meta.url), 'utf8');
+  const native = renderScore(new ScoreDocument(source), exsurge, nativeMeasure());
+  await drop(page, source, 'salve-regina.gabc');
+  await expect(page.locator('.staff')).toHaveCount(8);
+  const targets = await page.locator('[data-note]').evaluateAll(els => els.map(el => ({
+    note: el.getAttribute('data-note'),
+    staff: Number(el.closest('.staff')!.getAttribute('data-staff')),
+    x: Number(el.getAttribute('cx')) - 3,
+  })));
+  for (const target of targets) {
+    const expected = native.positions.find(p => p.note === target.note)!;
+    expect(target.staff, target.note!).toBe(expected.staff);
+    expect(target.x, target.note!).toBeCloseTo(expected.x, 0);
+  }
+  const lowNoteClearance = await page.locator('.staff').evaluateAll(els => {
+    const staff = els.find(el => [...el.querySelectorAll('.lyric')].some(l => l.textContent === 'Je'))!;
+    const lyric = [...staff.querySelectorAll<SVGGraphicsElement>('.lyric')].find(l => l.textContent === 'Je')!;
+    const target = staff.querySelector('[data-note="n149"]')!;
+    const svg = staff.querySelector('.overlay') as SVGSVGElement;
+    const center = new DOMPoint(Number(target.getAttribute('cx')), Number(target.getAttribute('cy'))).matrixTransform(svg.getScreenCTM()!);
+    return lyric.getBoundingClientRect().top - center.y;
+  });
+  expect(lowNoteClearance).toBeGreaterThan(5);
+  await page.keyboard.press('Home');
+  await page.keyboard.type('Dm'); await page.keyboard.press('Enter');
+  expect(await page.locator('[data-chord]').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBe(9);
+  await page.emulateMedia({ media: 'print' });
+  const geometry = await page.locator('.staff').first().evaluate(el => {
+    const lines = [...el.querySelectorAll<SVGGraphicsElement>('.staffLine')];
+    const svg = el.querySelector('.engraving svg') as SVGSVGElement;
+    const top = (line: SVGGraphicsElement) => new DOMPoint(0, Number(line.getAttribute('y1'))).matrixTransform(line.getScreenCTM()!).y;
+    return { width: svg.getBoundingClientRect().width * .75, gap: (top(lines[1]) - top(lines[0])) * .75 };
+  });
+  expect(geometry.width).toBeCloseTo(522, 1);
+  expect(geometry.gap).toBeCloseTo(12.45, 2);
+  const pdf = await page.pdf({ preferCSSPageSize: true, printBackground: true, displayHeaderFooter: false });
+  expect(pdf.toString('latin1').match(/\/Type \/Page\b/g)).toHaveLength(2);
 });

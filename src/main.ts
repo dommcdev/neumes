@@ -1,10 +1,11 @@
 import './styles.css';
 import { ScoreDocument } from './core/document.ts';
 import { Editor } from './core/editor.ts';
+import { ENGRAVING } from './core/engraving.ts';
 import { renderScore, escapeXml, SCORE_WIDTH, type Exsurge, type TextMeasurer } from './core/render.ts';
 
 declare global { interface Window { exsurge: Exsurge } }
-const PAPER_WIDTH = SCORE_WIDTH + 80;
+const PAPER_WIDTH = ENGRAVING.pageWidth;
 const icon = (name: string) => {
   const paths: Record<string, string> = {
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
@@ -65,7 +66,7 @@ const dialog = document.querySelector<HTMLDialogElement>('#dialog')!;
 const measure = document.createElement('canvas').getContext('2d')! as TextMeasurer;
 let editor: Editor | null = null;
 let handle: FileSystemFileHandle | null = null;
-let filename = '', diskSource = '', zoom = 1, busy = false;
+let filename = '', diskSource = '', zoom = 1.5, busy = false;
 let toastTimer: ReturnType<typeof setTimeout>;
 let drag: { pointer: number; startX: number; startY: number; lastX: number; lastY: number; fine: boolean; active: boolean; chord: boolean } | null = null;
 let persistTimer: ReturnType<typeof setTimeout>;
@@ -237,6 +238,7 @@ function refresh(): void {
     const pad = Math.max(0, 8 - Math.min(8, ...placed.map(p => p.top)));
     const height = spec.height + pad;
     staffEl.style.height = `${height}px`;
+    staffEl.style.marginBottom = `${spec.advance - spec.height}px`;
     staffEl.dataset.pad = String(pad);
     staffEl.querySelector<HTMLElement>('.engraving')!.style.top = `${pad}px`;
     const overlay = staffEl.querySelector<SVGSVGElement>('.overlay')!;
@@ -427,7 +429,9 @@ window.addEventListener('beforeunload', event => { if (unsaved()) { event.preven
 function isAbort(error: unknown): boolean { return error instanceof DOMException && error.name === 'AbortError'; }
 function errorMessage(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 const fontsReady = Promise.all([
-  document.fonts.load('21px "EB Garamond"'), document.fonts.load('bold 15px "EB Garamond"'), document.fonts.load('italic 42px "EB Garamond"'),
+  document.fonts.load('54px "EB Garamond"'),
+  document.fonts.load('20px "TeX Gyre Pagella"'), document.fonts.load('bold 9px "TeX Gyre Pagella"'),
+  document.fonts.load('bold italic 24px "TeX Gyre Pagella"'),
 ]).then(() => document.fonts.ready);
 
 async function restoreDraft(): Promise<void> {
