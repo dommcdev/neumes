@@ -28,7 +28,7 @@ const menuItem = (action: string, label: string, glyph: string, shortcut = '') =
 document.querySelector('#app')!.innerHTML = `
   <button class="menu-trigger" aria-label="Main menu" aria-expanded="false" aria-controls="main-menu">${icon('menu')}</button>
   <nav class="menu" id="main-menu" aria-label="Main menu" hidden>
-    <div class="menu-brand"><img src="/logo.svg" alt="Neumes"></div>
+    <div class="menu-brand"><img src="/logo.svg" width="2419" height="621" alt="Neumes"></div>
     ${menuItem('open', 'Open…', 'open', 'Ctrl O')}
     ${menuItem('save', 'Save to file', 'save', 'Ctrl S')}
     ${menuItem('save-as', 'Save as…', 'save', 'Ctrl Shift S')}
@@ -50,7 +50,7 @@ document.querySelector('#app')!.innerHTML = `
   <div class="file-label"></div>
   <main class="workspace" tabindex="-1" aria-label="Chant score editor">
     <section class="empty"><div class="empty-content">
-      <img src="/logo.svg" alt="Neumes">
+      <img src="/logo.svg" width="2419" height="621" alt="Neumes">
       <button class="empty-open">${icon('open')}<span>Open a .gabc file</span></button>
       <p class="empty-hint">or drag and drop one anywhere on this page</p>
     </div></section>
@@ -279,11 +279,11 @@ function help(): void {
         ${row('Add or replace a chord', ['Click', 'Type'])}
         ${row('Edit existing text', ['F2'], ['Double-click'])}
         ${row('Finish typing', ['Enter'], ['Esc'])}
-        ${row('Next note', ['Tab'])}
-        ${row('Previous note', ['Shift', 'Tab'])}
-        ${row('Move to adjacent note', ['←', '→'])}
-        ${row('Move to adjacent staff', ['↑', '↓'])}
-        ${row('Nudge position (0.5)', ['Ctrl', 'Arrow key'])}
+         ${row('Next note', ['Tab'], ['→'], ['↓'])}
+         ${row('Previous note', ['Shift', 'Tab'], ['←'], ['↑'])}
+         ${row('Move to adjacent note', ['Ctrl', '← / →'])}
+         ${row('Move to adjacent staff', ['Ctrl', '↑ / ↓'])}
+         ${row('Nudge position (0.5)', ['Shift', 'Arrow key'])}
         ${row('Nudge position (5)', ['Ctrl', 'Shift', 'Arrow key'])}
         ${row('Snap to another note', ['Drag'])}
         ${row('Move text freely', ['Ctrl', 'Drag'])}
@@ -356,7 +356,8 @@ document.addEventListener('keydown', event => {
   else if (key.startsWith('Arrow') && !alt) {
     const direction = key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 1;
     const horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
-    if (ctrl) { const step = direction * (shift ? 5 : .5); editor.nudge(horizontal ? step : 0, horizontal ? 0 : -step); }
+    if (shift) { const step = direction * (ctrl ? 5 : .5); editor.nudge(horizontal ? step : 0, horizontal ? 0 : -step); }
+    else if (!ctrl) editor.tab(direction);
     else if (horizontal) editor.moveTo(editor.cursor + direction);
     else editor.moveStaff(direction);
   } else if (key === 'Tab' && !ctrl && !alt) editor.tab(shift ? -1 : 1);

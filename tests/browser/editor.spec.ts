@@ -33,6 +33,69 @@ async function onDisk(page: Page) {
 
 test.beforeEach(async ({ page }) => { await page.goto('/'); });
 
+test('landing controls stay in place while the logo loads', async ({ page }) => {
+  for (const width of [1280, 375]) {
+    await page.setViewportSize({ width, height: 960 });
+    let release!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    await page.route('**/logo.svg*', async route => { await pending; await route.continue(); });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    const logo = page.locator('.empty img');
+    const button = page.getByRole('button', { name: 'Open a .gabc file' });
+    await expect(button).toBeVisible();
+    const before = await button.boundingBox();
+    const reserved = await logo.boundingBox();
+    expect(reserved!.height).toBeCloseTo(reserved!.width * 621 / 2419, 1);
+    release();
+    await expect.poll(() => logo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+    expect(await button.boundingBox()).toEqual(before);
+    await page.unroute('**/logo.svg*');
+  }
+});
+
+test('arrows navigate without moving chords; Ctrl moves and Shift nudges', async ({ page }) => {
+  await nativeFile(page);
+  await page.keyboard.press('Control+o');
+  await expect(page.locator('.paper')).toBeVisible();
+  await page.keyboard.type('Dm');
+  // Navigating also finishes the current chord entry, just like Tab.
+  for (const key of ['ArrowRight', 'ArrowDown']) {
+    await page.keyboard.press(key);
+    await expect(page.locator('.selected')).toHaveCount(0);
+  }
+  for (const key of ['ArrowLeft', 'ArrowUp']) await page.keyboard.press(key);
+  await expect(page.locator('.selected')).toHaveCount(1);
+  await expect(page.locator('[data-chord="n1"]')).toHaveText('Dm');
+  await page.keyboard.press('Control+ArrowRight');
+  await expect(page.locator('[data-chord="n2"]')).toHaveText('Dm');
+  await expect(page.locator('[data-chord="n1"]')).toHaveCount(0);
+  await page.keyboard.press('Control+ArrowLeft');
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('Shift+ArrowUp');
+  await page.keyboard.press('Control+Shift+ArrowLeft');
+  await page.keyboard.press('Control+Shift+ArrowDown');
+  await page.keyboard.press('Control+s');
+  await expect(page.locator('.dirty')).toHaveCount(0);
+  const saved = new ScoreDocument(await onDisk(page));
+  expect(saved.music).toBe(SOURCE);
+  expect(saved.chords).toHaveLength(1);
+  expect(saved.chords[0]).toMatchObject({ note: 'n1', text: 'Dm', dx: -4.5, dy: -4.5 });
+});
+
+test('Ctrl up/down moves a chord between staves', async ({ page }) => {
+  const source = readFileSync(new URL('../fixtures/salve-regina.gabc', import.meta.url), 'utf8');
+  await drop(page, source);
+  await expect(page.locator('.staff')).toHaveCount(8);
+  await page.keyboard.press('Home');
+  await page.keyboard.type('Dm');
+  await page.keyboard.press('Control+ArrowDown');
+  await expect(page.locator('.staff[data-staff="1"] [data-chord]')).toHaveText('Dm');
+  await expect(page.locator('[data-chord="n1"]')).toHaveCount(0);
+  await page.keyboard.press('Control+ArrowUp');
+  await expect(page.locator('.staff[data-staff="0"] [data-chord]')).toHaveText('Dm');
+  await expect(page.locator('.staff[data-staff="1"] [data-chord]')).toHaveCount(0);
+});
+
 test('minimal menu-only interface, polished headers and individual note editing', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -58,8 +121,8 @@ test('minimal menu-only interface, polished headers and individual note editing'
   const right = await page.locator('[data-chord="n4"]').boundingBox();
   expect(right!.x).toBeGreaterThan(left!.x + left!.width);
   expect(Math.abs(right!.y - left!.y)).toBeLessThan(1);
-  await page.keyboard.press('Control+ArrowRight');
-  await page.keyboard.press('Control+ArrowUp');
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('Shift+ArrowUp');
   await page.keyboard.press('Control+z');
   await page.keyboard.press('Control+Shift+z');
   await page.keyboard.press('Control+r');
@@ -83,8 +146,8 @@ test('native open/save, offset persistence, lossless music and reopen', async ({
   await expect(page.locator('.paper')).toBeVisible();
   await page.keyboard.type('Dm');
   await page.keyboard.press('Enter');
-  await page.keyboard.press('Control+ArrowRight');
-  await page.keyboard.press('Control+ArrowUp');
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.keyboard.press('Shift+ArrowUp');
   await page.keyboard.press('Control+s');
   await expect(page.locator('.dirty')).toHaveCount(0);
   const saved = new ScoreDocument(await onDisk(page));

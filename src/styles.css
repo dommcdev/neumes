@@ -137,7 +137,7 @@ kbd { font-family: inherit; font-size: 11px; color: var(--subtle); white-space: 
 }
 .menu[hidden] { display: none; }
 .menu-brand { padding: 5px 16px 12px; }
-.menu-brand img { width: 140px; }
+.menu-brand img { width: 140px; height: auto; }
 .menu button {
   display: flex;
   align-items: center;
@@ -197,7 +197,7 @@ kbd { font-family: inherit; font-size: 11px; color: var(--subtle); white-space: 
 .overlay .note-target { fill: transparent; }
 .empty { height: 100%; display: grid; place-items: center; padding-bottom: 40px; }
 .empty-content { display: flex; flex-direction: column; align-items: center; }
-.empty img { width: 260px; max-width: 70vw; margin-bottom: 36px; }
+.empty img { width: 260px; max-width: 70vw; height: auto; margin-bottom: 36px; }
 .empty-open {
   display: inline-flex;
   align-items: center;
