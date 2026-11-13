@@ -14,7 +14,10 @@
     "test:browser": "playwright test",
     "test:gregorio": "NEUMES_GREGORIO=1 bun test tests/gregorio.test.ts",
     "cli": "bun src/cli.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "desktop": "cargo run --release --manifest-path desktop/Cargo.toml --",
+    "desktop:build": "cargo build --release --manifest-path desktop/Cargo.toml",
+    "test:desktop": "cargo test --manifest-path desktop/Cargo.toml"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80"

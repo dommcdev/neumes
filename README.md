@@ -25,6 +25,25 @@ Chord commands save changes to the file. For more commands, use:
 bun run cli --help
 ```
 
+## Desktop app
+
+`desktop/` is a native version of the editor, drawn with
+[Rune](https://github.com/anomalyco/rune). It runs the same `src/core` code as
+the website (bundled by Bun and run in QuickJS), so scores open, edit and save
+identically. It needs Rust and Bun to build:
+
+```sh
+bun run desktop                 # build and open the app
+bun run desktop -- score.gabc   # open a score directly
+bun run desktop:build           # desktop/target/release/neumes
+bun run test:desktop
+```
+
+Unlike the website, it saves straight to the file, keeps an unsaved draft
+between sessions, and exports PDF without a print dialog. On Linux, the Open and
+Save dialogs use the XDG desktop portal. Dropping files into the window works on
+macOS, Windows and X11, not Wayland.
+
 ## Develop locally
 
 Start the development server:

@@ -1,8 +1,9 @@
 import './styles.css';
 import { ScoreDocument } from './core/document.ts';
 import { Editor } from './core/editor.ts';
+import { editorKey, movesCursor } from './core/keys.ts';
 import { ENGRAVING } from './core/engraving.ts';
-import { renderScore, escapeXml, SCORE_WIDTH, type Exsurge, type TextMeasurer } from './core/render.ts';
+import { renderScore, escapeXml, staffPad, SCORE_WIDTH, type Exsurge, type TextMeasurer } from './core/render.ts';
 
 declare global { interface Window { exsurge: Exsurge } }
 const PAPER_WIDTH = ENGRAVING.pageWidth;
@@ -235,7 +236,7 @@ function refresh(): void {
     const index = Number(staffEl.dataset.staff);
     const spec = ed.preview.staves[index];
     const placed = ed.placed.filter(p => p.staff === index);
-    const pad = Math.max(0, 8 - Math.min(8, ...placed.map(p => p.top)));
+    const pad = staffPad(ed.placed, index);
     const height = spec.height + pad;
     staffEl.style.height = `${height}px`;
     staffEl.style.marginBottom = `${spec.advance - spec.height}px`;
@@ -350,27 +351,9 @@ document.addEventListener('keydown', event => {
   if (key === 'F1') { event.preventDefault(); help(); return; }
   if (!editor || !menu.hidden) return;
   let handled = true;
-  if (ctrl && lower === 'z') shift ? editor.redo() : editor.undo();
-  else if (ctrl && lower === 'y') editor.redo();
-  else if (ctrl && lower === 'r') editor.resetOffsets();
-  else if (key.startsWith('Arrow') && !alt) {
-    const direction = key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 1;
-    const horizontal = key === 'ArrowLeft' || key === 'ArrowRight';
-    if (shift) { const step = direction * (ctrl ? 5 : .5); editor.nudge(horizontal ? step : 0, horizontal ? 0 : -step); }
-    else if (!ctrl) editor.tab(direction);
-    else if (horizontal) editor.moveTo(editor.cursor + direction);
-    else editor.moveStaff(direction);
-  } else if (key === 'Tab' && !ctrl && !alt) editor.tab(shift ? -1 : 1);
-  else if (key === 'F2') editor.startEdit();
-  else if (key === 'Enter' || key === 'Escape') { if (key === 'Escape' && !editor.editing) editor.selected = null; editor.finish(); }
-  else if (key === 'Backspace' && !ctrl) editor.backspace();
-  else if (key === 'Delete' && !ctrl) editor.delete();
-  else if (key === 'Home') editor.select(0);
-  else if (key === 'End') editor.select(editor.doc.notes.length - 1);
-  else if (!alt && (key === 'PageUp' || key === 'PageDown')) workspace.scrollBy(0, workspace.clientHeight * .85 * (key === 'PageUp' ? -1 : 1));
-  else if (!ctrl && !alt && key.length === 1) editor.type(key);
-  else handled = false;
-  if (handled) { event.preventDefault(); refresh(); if (key === 'Tab' || key.startsWith('Arrow') || key === 'Home' || key === 'End') reveal(); }
+  if (!alt && (key === 'PageUp' || key === 'PageDown')) workspace.scrollBy(0, workspace.clientHeight * .85 * (key === 'PageUp' ? -1 : 1));
+  else handled = editorKey(editor, { key, ctrl, shift, alt });
+  if (handled) { event.preventDefault(); refresh(); if (movesCursor(key)) reveal(); }
 });
 
 function pointerPosition(event: PointerEvent): { staff: number; x: number; y: number } | null {

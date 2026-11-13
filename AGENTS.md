@@ -4,6 +4,9 @@
 - `bun install`, `bun run dev`, `bun run build`, `bun run test`.
 - The static Chromium SPA and Bun CLI share `src/core/`. Keep musical parsing,
   chord edits, serialization, and collision rules there, not in UI handlers.
+- The Rune desktop app (`desktop/`, Rust) shares `src/core/` too: `build.rs`
+  bundles `src/desktop/engine.ts` with Bun and QuickJS runs it. Keep editing
+  logic in `src/core/` (e.g. `keys.ts`), not in Rust. `bun run test:desktop`.
 - Individual notes are targets, including implicit repeated strophae/virgae.
   Neume groups are only grouping/context, not the smallest editing target.
 - Never reserialize the musical source or insert note spacing to fit chords.

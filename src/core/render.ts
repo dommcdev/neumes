@@ -238,7 +238,16 @@ export function layoutChords(doc: ScoreDocument, preview: Preview, measure: Text
   return placed;
 }
 
-export function scoreSvg(doc: ScoreDocument, preview: Preview, placed: PlacedChord[]): string {
+/** Room above a staff for chords raised over its top edge. */
+export function staffPad(placed: PlacedChord[], staff: number): number {
+  return Math.max(0, 8 - Math.min(8, ...placed.filter(p => p.staff === staff).map(p => p.top)));
+}
+
+interface ScoreParts { width: number; height: number; body: string; blocks: { top: number; bottom: number }[] }
+/** The printed sheet: headings, then each staff with its chords. `blocks` are
+ * the heading and staff extents, which must not be split across pages.
+ */
+function scoreParts(doc: ScoreDocument, preview: Preview, placed: PlacedChord[]): ScoreParts {
   const width = preview.width;
   const heading = doc.headers['sheet-heading'] || '';
   const title = doc.headers['sheet-title'] || doc.headers.name || 'Untitled chant';
@@ -255,15 +264,43 @@ export function scoreSvg(doc: ScoreDocument, preview: Preview, placed: PlacedCho
     parts.push(`<text x="${width / 2}" y="${y + ENGRAVING.subtitleSize}" text-anchor="middle" font-size="${ENGRAVING.subtitleSize}" font-style="italic" font-weight="bold">${escapeXml(subtitle)}</text>`);
     y += 15 * 72 / 72.27;
   }
+  const blocks = [{ top: 0, bottom: y }];
   let bottom = y;
   for (let staff = 0; staff < preview.staves.length; staff++) {
     const spec = preview.staves[staff];
     const chords = placed.filter(p => p.staff === staff);
-    const pad = Math.max(0, 8 - Math.min(8, ...chords.map(p => p.top)));
+    const pad = staffPad(placed, staff);
     const inner = spec.svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '');
     parts.push(`<g transform="translate(0,${y + pad})">${inner}${chords.map(p => `<text x="${p.x}" y="${p.baseline}" font-size="${ENGRAVING.chordSize}" font-weight="bold">${escapeXml(doc.chords.find(c => c.note === p.note)!.text)}</text>`).join('')}</g>`);
     bottom = y + spec.height + pad;
+    blocks.push({ top: y, bottom });
     y += spec.advance + pad;
   }
-  return `<svg class="Exsurge" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}pt" height="${bottom + 8}pt" viewBox="0 0 ${width} ${bottom + 8}" text-rendering="geometricPrecision"><rect width="100%" height="100%" fill="white"/><g font-family="${escapeXml(FONT)}" fill="#000">${parts.join('')}</g></svg>`;
+  return { width, height: bottom + 8, body: `<g font-family="${escapeXml(FONT)}" fill="#000">${parts.join('')}</g>`, blocks };
+}
+
+export function scoreSvg(doc: ScoreDocument, preview: Preview, placed: PlacedChord[]): string {
+  const { width, height, body } = scoreParts(doc, preview, placed);
+  return `<svg class="Exsurge" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}pt" height="${height}pt" viewBox="0 0 ${width} ${height}" text-rendering="geometricPrecision"><rect width="100%" height="100%" fill="white"/>${body}</svg>`;
+}
+
+/** Letter pages with the browser's print margins, one SVG per page (units are
+ * PDF points). Staves are never split, and the headings stay with the first.
+ */
+export function scorePages(doc: ScoreDocument, preview: Preview, placed: PlacedChord[]): string[] {
+  const { width, body, blocks } = scoreParts(doc, preview, placed);
+  const { pageWidth, pageHeight, marginX, marginTop, marginBottom } = ENGRAVING;
+  const room = pageHeight - marginTop - marginBottom;
+  const pages: { top: number; bottom: number }[] = [];
+  for (const [index, block] of blocks.entries()) {
+    const page = pages.at(-1);
+    // A staff's box reaches up into the previous staff's lyrics; start below them.
+    if (!page) pages.push({ ...block });
+    else if (index > 1 && block.bottom - page.top > room) pages.push({ top: Math.max(block.top, page.bottom), bottom: block.bottom });
+    else page.bottom = block.bottom;
+  }
+  return pages.map(({ top, bottom }) => {
+    const height = Math.min(room, bottom - top + 8);
+    return `<svg class="Exsurge" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${pageWidth}pt" height="${pageHeight}pt" viewBox="0 0 ${pageWidth} ${pageHeight}" text-rendering="geometricPrecision"><rect width="100%" height="100%" fill="white"/><svg x="${marginX}" y="${marginTop}" width="${width}" height="${height}" viewBox="0 ${top} ${width} ${height}" overflow="hidden">${body}</svg></svg>`;
+  });
 }

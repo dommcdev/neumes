@@ -1,0 +1,35 @@
+[package]
+name = "neumes-desktop"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Neumes as a native desktop app, drawn with Rune"
+publish = false
+
+[[bin]]
+name = "neumes"
+path = "src/main.rs"
+
+[dependencies]
+# Rune is pre-release: pin a `dev` rev, and patch the same crates from it (below).
+rune = { git = "https://github.com/anomalyco/rune", rev = "428e23be6fcefa4e19faad28d9fc2f4313e7851c", features = ["native-file-dialog"] }
+# Runs the shared TypeScript core (src/core) and Exsurge, bundled by build.rs.
+rquickjs = "0.10"
+# Staff images and PDF export share one usvg.
+resvg = { version = "0.47", default-features = false, features = ["text"] }
+krilla = "0.8"
+krilla-svg = "0.8"
+# Canvas-compatible text measurement for Exsurge and chord layout.
+rustybuzz = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "428e23be6fcefa4e19faad28d9fc2f4313e7851c" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "428e23be6fcefa4e19faad28d9fc2f4313e7851c" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "428e23be6fcefa4e19faad28d9fc2f4313e7851c" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "428e23be6fcefa4e19faad28d9fc2f4313e7851c" }
+
+[profile.release]
+lto = "thin"
+strip = true

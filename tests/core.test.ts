@@ -3,7 +3,8 @@ import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { ScoreDocument, revision, validChord } from '../src/core/document.ts';
-import { renderScore, layoutChords, scoreSvg, prepareRendererSource } from '../src/core/render.ts';
+import { renderScore, layoutChords, scoreSvg, scorePages, prepareRendererSource } from '../src/core/render.ts';
+import { editorKey } from '../src/core/keys.ts';
 import { Editor } from '../src/core/editor.ts';
 import { exsurge, nativeMeasure } from '../src/native.ts';
 
@@ -211,6 +212,33 @@ describe('Exsurge geometry and shared editing', () => {
 });
 
 const samples = process.env.NEUMES_SAMPLES || join(homedir(), 'dev/chant/scores');
+describe('shared shell helpers', () => {
+  const key = (k: string, mods: Partial<{ ctrl: boolean; shift: boolean; alt: boolean }> = {}) => ({ key: k, ctrl: false, shift: false, alt: false, ...mods });
+  test('editor keys type, move and undo the same way in every shell', () => {
+    const { doc, measure, preview } = create();
+    const editor = new Editor(doc, preview, measure);
+    editor.select(1);
+    expect(editorKey(editor, key('G'))).toBe(true);
+    expect(editorKey(editor, key('#'))).toBe(true);
+    expect(editorKey(editor, key('Enter'))).toBe(true);
+    expect(doc.chords.find(c => c.note === 'n2')?.text).toBe('G♯');
+    expect(editorKey(editor, key('Tab'))).toBe(true);
+    expect(editor.cursor).toBe(2);
+    expect(editorKey(editor, key('z', { ctrl: true }))).toBe(true);
+    expect(doc.chords.some(c => c.note === 'n2')).toBe(false);
+    expect(editorKey(editor, key('PageDown'))).toBe(false);
+    expect(editorKey(editor, key('a', { alt: true }))).toBe(false);
+  });
+  test('printed pages keep whole staves and the headings', () => {
+    const source = readFileSync(join(import.meta.dir, 'fixtures/salve-regina.gabc'), 'utf8');
+    const { doc, measure, preview } = create(source);
+    const pages = scorePages(doc, preview, layoutChords(doc, preview, measure));
+    expect(pages.length).toBe(2);
+    for (const page of pages) expect(page).toStartWith('<svg class="Exsurge"');
+    expect(pages[0]).toContain('Salve Regina');
+  });
+});
+
 describe('real local scores (read-only)', () => {
   if (!existsSync(samples)) test.skip('set NEUMES_SAMPLES to a directory of GABC files', () => {});
   else for (const file of readdirSync(samples).filter(f => f.endsWith('.gabc'))) test(file, () => {
