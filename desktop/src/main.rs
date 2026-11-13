@@ -104,7 +104,9 @@ pub struct State {
 impl State {
     fn new() -> State {
         let engine = Engine::new().unwrap_or_else(|e| panic!("could not start the score engine: {e}"));
-        let prefs = Prefs::open("net.dommcdev.neumes");
+        // Headless runs (snapshots, scripts) never touch the real theme or draft.
+        let headless = std::env::args().any(|a| matches!(a.as_str(), "--snap" | "--script" | "--tree" | "--frames" | "--video" | "--strip"));
+        let prefs = if headless { Prefs::memory() } else { Prefs::open("net.dommcdev.neumes") };
         let theme = prefs.get("theme").unwrap_or(Theme::System);
         let mut s = State {
             engine, score: None, zoom: 1.5, raster_zoom: 1.5, zoom_due: None, theme, menu_open: false,

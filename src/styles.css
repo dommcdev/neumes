@@ -159,18 +159,28 @@ kbd { font-family: inherit; font-size: 11px; color: var(--subtle); white-space: 
 .menu .theme-options button[aria-pressed=true] { background: var(--accent); color: var(--on-accent); }
 .file-label {
   position: fixed;
-  right: 24px;
-  top: 32px;
-  max-width: calc(100vw - 115px);
+  left: 50%;
+  top: 26px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 180px);
+  height: 34px;
+  padding: 0 15px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px #26241e08;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--muted);
   z-index: 10;
   pointer-events: none;
 }
-.file-label .dirty { color: var(--accent); }
+.file-label:empty { display: none; }
+.file-name { overflow: hidden; text-overflow: ellipsis; }
+.file-label .dirty { flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .workspace { width: 100%; height: 100%; overflow: auto; padding: 95px 40px 85px; outline: none; scrollbar-gutter: stable; }
 .paper-slot { position: relative; margin: 0 auto; min-width: 0; }
 .paper {
@@ -273,7 +283,7 @@ dialog p { font-size: 14px; line-height: 1.6; color: var(--muted); margin: 0 0 2
   .workspace { padding: 85px 12px 70px; }
   .menu-trigger { left: 14px; top: 14px; }
   .menu { left: 14px; top: 68px; }
-  .file-label { right: 16px; top: 30px; }
+  .file-label { top: 20px; max-width: calc(100vw - 150px); }
 }
 /* Engraving units are bp; CSS print pixels are 1/96 inch. */
 @page { size: letter; margin: .4in .625in .65in; }

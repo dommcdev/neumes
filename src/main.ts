@@ -231,7 +231,7 @@ function refresh(): void {
   if (!editor) return;
   const ed = editor;
   document.title = `${unsaved() ? '• ' : ''}${filename} — Neumes`;
-  document.querySelector('.file-label')!.innerHTML = `${unsaved() ? '<span class="dirty">●</span> ' : ''}${escapeXml(filename)}`;
+  document.querySelector('.file-label')!.innerHTML = `${unsaved() ? '<span class="dirty" title="Unsaved changes"></span>' : ''}<span class="file-name">${escapeXml(filename)}</span>`;
   for (const staffEl of workspace.querySelectorAll<HTMLElement>('.staff')) {
     const index = Number(staffEl.dataset.staff);
     const spec = ed.preview.staves[index];
@@ -257,10 +257,16 @@ function refresh(): void {
     try { if (editor && unsaved()) localStorage.setItem('neumes-draft', JSON.stringify({ name: filename, source: editor.doc.serialize() })); else localStorage.removeItem('neumes-draft'); } catch {}
   }, 300);
 }
+// Centre the file name over the paper, not the window (the scrollbar takes room).
+function placeFileLabel(): void {
+  document.querySelector<HTMLElement>('.file-label')!.style.left = `${workspace.clientWidth / 2}px`;
+}
+addEventListener('resize', placeFileLabel);
 function updateZoom(): void {
   const paper = workspace.querySelector<HTMLElement>('.paper');
   const slot = workspace.querySelector<HTMLElement>('.paper-slot');
   if (paper && slot) { paper.style.transform = `scale(${zoom})`; slot.style.width = `${PAPER_WIDTH * zoom}px`; slot.style.height = `${paper.offsetHeight * zoom}px`; }
+  placeFileLabel();
 }
 function setZoom(value: number): void { zoom = Math.max(.3, Math.min(5, value)); refresh(); }
 function reveal(): void {

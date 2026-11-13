@@ -240,28 +240,18 @@ fn el_rect(x: f32, y: f32, w: f32, h: f32, z: f32) -> El {
     el().absolute(x * z, y * z).size(w * z, h * z)
 }
 
+/// The file name in a pill centred over the paper, level with the menu button.
 fn file_label(s: &State, p: &Palette) -> El {
-    let mut label = row()
-        .key("file-label")
-        .absolute(0.0, 0.0)
-        .w_full()
-        .pt(32.0)
-        .pl(115.0)
-        .pr(24.0)
-        .justify_end();
+    let narrow = s.window_width < 650.0;
+    let mut label = row().key("file-label").absolute(0.0, if narrow { 20.0 } else { 26.0 }).w_full().justify_center();
     if let Some(score) = &s.score {
-        let mut line = row().gap(4.0).min_w(0.0);
+        let mut pill = row().h(34.0).px(15.0).gap(8.0).items_center().min_w(0.0)
+            .max_w((s.window_width - if narrow { 150.0 } else { 180.0 }).max(80.0))
+            .radius(17.0).fill(p.surface).border(1.0, p.border).shadow(2.0, 8.0, p.shadow.alpha(0.05));
         if s.unsaved() {
-            line = line.child(text("●").font(style(12.0, 400.0)).color(p.accent));
+            pill = pill.child(el().key("dirty").size(7.0, 7.0).radius(3.5).fill(p.accent).label("Unsaved changes"));
         }
-        label = label.child(
-            line.child(
-                text(score.name.clone())
-                    .font(style(12.0, 400.0))
-                    .color(p.muted)
-                    .truncate(),
-            ),
-        );
+        label = label.child(pill.child(text(score.name.clone()).font(style(13.0, 400.0)).color(p.muted).truncate()));
     }
     label
 }
