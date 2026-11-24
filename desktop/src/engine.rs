@@ -34,6 +34,10 @@ pub struct Opened {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
 pub struct View {
+    /// `gabc`, or `ly` for LilyPond, whose staves are pages.
+    pub kind: String,
+    /// Width of the staves (or pages) in points.
+    pub width: f32,
     pub dirty: bool,
     #[serde(rename = "canUndo")]
     pub can_undo: bool,
@@ -72,6 +76,8 @@ pub struct Staff {
     pub pad: f32,
     /// Changes whenever the staff's image does.
     pub key: String,
+    /// For LilyPond pages, changes whenever the page's chord image (`chord_svg`) does.
+    pub chords: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
@@ -137,6 +143,15 @@ impl Engine {
     pub fn staff_svg(&self, index: usize) -> Result<String, String> {
         self.call("staffSvg", json!([index]))
     }
+    pub fn chord_svg(&self, index: usize) -> Result<String, String> {
+        self.call("chordSvg", json!([index]))
+    }
+    pub fn lily_music(&self, source: &str) -> Result<String, String> {
+        self.call("lilyMusic", json!([source]))
+    }
+    pub fn open_lily(&self, source: &str, name: &str, engraved: &crate::lily::Engraved) -> Result<Opened, String> {
+        self.call("openLily", json!([source, name, engraved.geometry, engraved.file, engraved.display]))
+    }
     pub fn serialize(&self) -> Result<String, String> {
         self.call("serialize", json!([]))
     }
@@ -191,6 +206,39 @@ mod tests {
         assert!(!pages.is_empty());
         let pdf = crate::raster::pdf(&pages).unwrap();
         assert!(pdf.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn edits_lilypond_scores_without_engraving_again() {
+        if !crate::lily::tests::available() {
+            eprintln!("skipped: LilyPond is not installed");
+            return;
+        }
+        let source = "\\version \"2.24.0\"\n\\header { title = \"Test\" }\n\\relative c' { d4 e^\"Am\" <f a>2 \\repeat unfold 2 { g4 } }\n";
+        let engine = Engine::new().unwrap();
+        let music = engine.lily_music(source).unwrap();
+        assert!(!music.contains("Am"));
+        let engraved = crate::lily::engrave(&music, None).unwrap();
+        engine.open_lily(source, "test.ly", &engraved).unwrap();
+        assert_eq!(engine.serialize().unwrap(), source);
+        let view = engine.view().unwrap();
+        assert_eq!((view.kind.as_str(), view.staves.len(), view.dirty), ("ly", 1, false));
+        assert!(view.staves[0].chords.contains("Am"));
+        assert!(engine.staff_svg(0).unwrap().contains("<svg"));
+
+        // The <f a> chord is one target: type a chord on it.
+        for key in ["Tab", "Tab", "G", "7", "Enter"] {
+            engine.key(key, false, false, false).unwrap();
+        }
+        let view = engine.view().unwrap();
+        assert!(view.dirty && view.staves[0].chords.contains("G7"));
+        assert!(engine.chord_svg(0).unwrap().contains("G7"));
+        let saved = engine.serialize().unwrap();
+        assert!(saved.contains("<f a>2^\\markup \\bold \"G7\""), "{saved}");
+        assert_eq!(engine.lily_music(&saved).unwrap(), music);
+        engine.run("saved", json!([saved])).unwrap();
+        assert!(!engine.view().unwrap().dirty);
+        assert!(crate::lily::pdf(&saved, None).unwrap().starts_with(b"%PDF"));
     }
 
     #[test]

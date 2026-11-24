@@ -22,6 +22,20 @@ export interface Chord {
   autoRaise: number;
 }
 
+/** What the editor and chord layout need from a score: GABC or LilyPond. */
+export interface ChordDocument {
+  chords: Chord[];
+  readonly notes: readonly { id: string; index: number }[];
+  readonly name: string;
+  readonly dirty: boolean;
+  /** Whether manual chord offsets (`dx`, `dy`) are saved in the file. */
+  readonly offsets: boolean;
+  note(id: string): { id: string; index: number };
+  setChord(id: string, text: string): void;
+  removeChord(id: string): void;
+  serialize(): string;
+}
+
 const PREFIX = '[nv:\\hbox to0pt{\\kern-\\csname gre@dimen@lastglyphwidth\\endcsname\\GreSetTextAboveLines{';
 const GLYPH_PREFIX = PREFIX.replace('[nv:', '[gv:');
 const SUFFIX = '}\\csname gre@currenttextabovelines\\endcsname\\hss}]';
@@ -140,7 +154,8 @@ function extractNotes(source: string): Note[] {
   return notes;
 }
 
-export class ScoreDocument {
+export class ScoreDocument implements ChordDocument {
+  readonly offsets = true;
   readonly original: string;
   readonly music: string;
   readonly notes: Note[];

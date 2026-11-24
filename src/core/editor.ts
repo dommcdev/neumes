@@ -1,8 +1,8 @@
-import { type Chord, ScoreDocument } from './document.ts';
-import { layoutChords, type PlacedChord, type Preview, type TextMeasurer } from './render.ts';
+import type { Chord, ChordDocument } from './document.ts';
+import { CHORD_FONT, layoutChords, type PlacedChord, type Preview, type TextMeasurer } from './render.ts';
 
 interface Snapshot { chords: Chord[]; cursor: number; selected: string | null }
-export class Editor {
+export class Editor<D extends ChordDocument = ChordDocument> {
   cursor = 0;
   selected: string | null = null;
   editing = false;
@@ -12,7 +12,7 @@ export class Editor {
   private redoStack: Snapshot[] = [];
   get canUndo(): boolean { return this.undoStack.length > 0; }
   get canRedo(): boolean { return this.redoStack.length > 0; }
-  constructor(public doc: ScoreDocument, public preview: Preview, private measure: TextMeasurer) {
+  constructor(public doc: D, public preview: Preview, private measure: TextMeasurer, readonly chordFont = CHORD_FONT) {
     this.layout(true);
   }
   private snapshot(): Snapshot { return { chords: structuredClone(this.doc.chords), cursor: this.cursor, selected: this.selected }; }
@@ -20,7 +20,7 @@ export class Editor {
   private restore(s: Snapshot): void { this.doc.chords = s.chords; this.cursor = s.cursor; this.selected = s.selected; this.finish(); this.layout(false); }
   undo(): void { const s = this.undoStack.pop(); if (s) { this.redoStack.push(this.snapshot()); this.restore(s); } }
   redo(): void { const s = this.redoStack.pop(); if (s) { this.undoStack.push(this.snapshot()); this.restore(s); } }
-  layout(recalculate = true): void { this.placed = layoutChords(this.doc, this.preview, this.measure, recalculate); }
+  layout(recalculate = true): void { this.placed = layoutChords(this.doc, this.preview, this.measure, recalculate, true, this.chordFont); }
   get position() { return this.preview.positions[this.cursor]; }
   select(index: number): void {
     this.finish(); this.cursor = Math.max(0, Math.min(index, this.doc.notes.length - 1));
@@ -64,11 +64,12 @@ export class Editor {
   }
   nudge(dx: number, dy: number, record = true): void {
     this.finish(); const c = this.doc.chords.find(c => c.note === this.selected);
-    if (c) {
+    // LilyPond places chords itself; only GABC saves manual offsets.
+    if (c && this.doc.offsets) {
       if (record) this.record();
       c.dx = Math.round((c.dx + dx) * 1e6) / 1e6;
       c.dy = Math.round((c.dy + dy) * 1e6) / 1e6;
-      this.placed = layoutChords(this.doc, this.preview, this.measure, true, false);
+      this.placed = layoutChords(this.doc, this.preview, this.measure, true, false, this.chordFont);
     }
   }
   resetOffsets(): void {

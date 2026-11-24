@@ -47,6 +47,8 @@ struct Inner {
     header: Image,
     logo: Image,
     staves: Vec<Image>,
+    /// LilyPond pages' chords, drawn over the unchanging pages.
+    chords: Vec<Image>,
 }
 
 #[derive(Default)]
@@ -60,6 +62,7 @@ impl Images {
     pub fn reset(&mut self) {
         let inner = self.inner.get_mut();
         inner.staves.clear();
+        inner.chords.clear();
         inner.header = Image::default();
     }
 
@@ -76,6 +79,14 @@ impl Images {
             inner.staves.push(Image::default());
         }
         inner.staves[index].ensure(key, scale, dark, || engine.staff_svg(index))
+    }
+
+    pub fn chords(&self, engine: &Engine, index: usize, key: &str, scale: f32, dark: bool) -> Pixels {
+        let mut inner = self.inner.borrow_mut();
+        while inner.chords.len() <= index {
+            inner.chords.push(Image::default());
+        }
+        inner.chords[index].ensure(key, scale, dark, || engine.chord_svg(index))
     }
 
     pub fn header(&self, scale: f32, dark: bool) -> Pixels {

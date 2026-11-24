@@ -65,7 +65,7 @@ const menu = document.querySelector<HTMLElement>('.menu')!;
 const trigger = document.querySelector<HTMLButtonElement>('.menu-trigger')!;
 const dialog = document.querySelector<HTMLDialogElement>('#dialog')!;
 const measure = document.createElement('canvas').getContext('2d')! as TextMeasurer;
-let editor: Editor | null = null;
+let editor: Editor<ScoreDocument> | null = null;
 let handle: FileSystemFileHandle | null = null;
 let filename = '', diskSource = '', zoom = 1.5, busy = false;
 let toastTimer: ReturnType<typeof setTimeout>;

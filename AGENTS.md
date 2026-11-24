@@ -7,6 +7,11 @@
 - The Rune desktop app (`desktop/`, Rust) shares `src/core/` too: `build.rs`
   bundles `src/desktop/engine.ts` with Bun and QuickJS runs it. Keep editing
   logic in `src/core/` (e.g. `keys.ts`), not in Rust. `bun run test:desktop`.
+- LilyPond (`.ly`) support is desktop and CLI only. `src/core/lilypond.ts`
+  reads note positions from LilyPond's point-and-click SVG; never parse
+  LilyPond syntax beyond chord annotations and note tokens. Edits must not
+  re-run LilyPond (it engraves once at open, and again only to export).
+  Tests that need LilyPond skip when it isn't installed.
 - Individual notes are targets, including implicit repeated strophae/virgae.
   Neume groups are only grouping/context, not the smallest editing target.
 - Never reserialize the musical source or insert note spacing to fit chords.

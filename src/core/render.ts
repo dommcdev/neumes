@@ -1,4 +1,4 @@
-import { bodyStart, ScoreDocument } from './document.ts';
+import { bodyStart, ScoreDocument, type ChordDocument } from './document.ts';
 import { ENGRAVING, FONT, INITIAL_FONT, CHORD_FONT } from './engraving.ts';
 export { FONT, CHORD_FONT } from './engraving.ts';
 
@@ -21,7 +21,10 @@ export interface Position {
   glyphX: number;
 }
 export interface Staff { svg: string; width: number; height: number; advance: number }
-export interface Preview { staves: Staff[]; positions: Position[]; width: number }
+/** `echoes`: further engravings of a note (a LilyPond variable used twice),
+ * which show its chord too but are not editing targets. */
+export interface Echo { note: string; staff: number; x: number; y: number }
+export interface Preview { staves: Staff[]; positions: Position[]; width: number; echoes?: Echo[] }
 export const SCORE_WIDTH = ENGRAVING.scoreWidth;
 
 export function escapeXml(text: string): string {
@@ -203,8 +206,8 @@ export interface PlacedChord {
 /** Center chords on their notes, pack within neumes, and stagger group collisions.
  * Only chord overlays move. Exsurge's chant geometry is never changed by edits.
  */
-export function layoutChords(doc: ScoreDocument, preview: Preview, measure: TextMeasurer, recalculate = true, packGroups = true): PlacedChord[] {
-  measure.font = CHORD_FONT;
+export function layoutChords(doc: ChordDocument, preview: Preview, measure: TextMeasurer, recalculate = true, packGroups = true, font = CHORD_FONT): PlacedChord[] {
+  measure.font = font;
   const placed: PlacedChord[] = [];
   const previousByGroup = new Map<string, PlacedChord>();
   const positions = new Map(preview.positions.map(p => [p.note, p]));

@@ -30,7 +30,7 @@ pub fn view(s: &State, cx: &mut Cx<State>) -> El {
             }
         })
         .on_drop_files(|s: &mut State, files, tx| s.drop_files(tx, files))
-        .accepts_extensions(&["gabc"])
+        .accepts_extensions(crate::EXTENSIONS)
         .on_drop_hover(|s: &mut State, over, _| s.drop_hover = over)
         .child(match &s.score {
             Some(_) => workspace(s, &p, env.scale, dark),
@@ -117,10 +117,10 @@ fn empty(s: &State, p: &Palette, scale: f32, dark: bool) -> El {
                 .cursor(Cursor::Pointer)
                 .shadow(2.0, 8.0, p.accent.alpha(0.15))
                 .role("button")
-                .label("Open a .gabc file")
+                .label("Open a .gabc or .ly file")
                 .child(icon(&palette::OPEN, 18.0).color(p.on_accent))
                 .child(
-                    text("Open a .gabc file")
+                    text("Open a .gabc or .ly file")
                         .font(style(14.0, 500.0))
                         .color(p.on_accent),
                 )
@@ -139,31 +139,19 @@ fn workspace(s: &State, p: &Palette, scale: f32, dark: bool) -> El {
     let view = &score.view;
     let z = s.zoom;
     let raster = scale * s.raster_zoom;
+    let lily = score.lily();
+    let width = if lily { view.width } else { SCORE_WIDTH };
     let image = |height: f32, pixels: &rune::Pixels| {
         el().absolute(-BLEED * z, -BLEED * z)
-            .size((SCORE_WIDTH + 2.0 * BLEED) * z, (height + 2.0 * BLEED) * z)
+            .size((width + 2.0 * BLEED) * z, (height + 2.0 * BLEED) * z)
             .pixels(pixels)
     };
-    let mut paper = col()
-        .key("paper")
-        .w(612.0 * z)
-        .fill(p.surface)
-        .border(1.0, p.paper_border)
-        .shadow(2.0, 14.0, p.shadow)
-        .pt(28.8 * z)
-        .px(44.0 * z)
-        .pb(46.8 * z)
-        .child(
-            el().key("sheet-header")
-                .w(SCORE_WIDTH * z)
-                .h(score.header_height * z)
-                .child(image(score.header_height, &s.images.header(raster, dark))),
-        );
+    let mut staves = Vec::with_capacity(view.staves.len());
     for (index, staff) in view.staves.iter().enumerate() {
         let pixels = s.images.staff(&s.engine, index, &staff.key, raster, dark);
         let mut el = el()
             .key(format!("staff-{index}"))
-            .w(SCORE_WIDTH * z)
+            .w(width * z)
             .h(staff.height * z)
             .mb(staff.gap * z)
             .cursor(Cursor::Crosshair)
@@ -179,6 +167,14 @@ fn workspace(s: &State, p: &Palette, scale: f32, dark: bool) -> El {
                     Phase::Up => s.release(),
                 }
             });
+        if lily {
+            // A LilyPond page is its own sheet of paper; its chords are a layer over it.
+            el = el
+                .fill(p.surface)
+                .border(1.0, p.paper_border)
+                .shadow(2.0, 14.0, p.shadow)
+                .child(image(staff.height, &s.images.chords(&s.engine, index, &staff.chords, raster, dark)));
+        }
         if let Some(sel) = view.selected.filter(|sel| sel.staff == index) {
             el = el.child(
                 el_rect(
@@ -203,6 +199,7 @@ fn workspace(s: &State, p: &Palette, scale: f32, dark: bool) -> El {
                     12.0,
                     z,
                 )
+                .key("note-cursor")
                 .radius(2.0 * z)
                 .fill(p.cursor_fill)
                 .border(1.3 * z, p.accent),
@@ -214,8 +211,35 @@ fn workspace(s: &State, p: &Palette, scale: f32, dark: bool) -> El {
                 );
             }
         }
-        paper = paper.child(el);
+        staves.push(el);
     }
+    let content = if lily {
+        let mut pages = col().key("pages");
+        for page in staves {
+            pages = pages.child(page);
+        }
+        pages
+    } else {
+        let mut paper = col()
+            .key("paper")
+            .w(612.0 * z)
+            .fill(p.surface)
+            .border(1.0, p.paper_border)
+            .shadow(2.0, 14.0, p.shadow)
+            .pt(28.8 * z)
+            .px(44.0 * z)
+            .pb(46.8 * z)
+            .child(
+                el().key("sheet-header")
+                    .w(SCORE_WIDTH * z)
+                    .h(score.header_height * z)
+                    .child(image(score.header_height, &s.images.header(raster, dark))),
+            );
+        for staff in staves {
+            paper = paper.child(staff);
+        }
+        paper
+    };
     let narrow = s.window_width < 650.0;
     el().key("workspace")
         .w_full()
@@ -231,7 +255,7 @@ fn workspace(s: &State, p: &Palette, scale: f32, dark: bool) -> El {
                 .pt(if narrow { 85.0 } else { 95.0 })
                 .pb(if narrow { 70.0 } else { 85.0 })
                 .px(if narrow { 12.0 } else { 40.0 })
-                .child(paper),
+                .child(content),
         )
 }
 

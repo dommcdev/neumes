@@ -1,0 +1,59 @@
+# Builds the Linux desktop app and attaches it to each published release.
+# Make a release with `bun run release 0.2.0` (see scripts/release.ts).
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and upload to (for example v0.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install system libraries
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+
+      - run: bun install --frozen-lockfile
+      - run: bun run test:desktop
+      - run: bun run desktop:build
+
+      - name: Package
+        run: |
+          name="neumes-${TAG}-linux-x86_64"
+          mkdir "$name"
+          cp desktop/target/release/neumes LICENSE "$name/"
+          cp desktop/assets/Inter-LICENSE.txt "$name/"
+          tar czf "$name.tar.gz" "$name"
+          echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" "$ARCHIVE" --clobber

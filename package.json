@@ -4,20 +4,22 @@
   "private": true,
   "type": "module",
   "license": "MIT",
+  "packageManager": "bun@1.4.4",
   "bin": { "neumes": "./src/cli.ts" },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
     "deploy": "bun run build && wrangler deploy",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "bun test tests/core.test.ts tests/cli.test.ts",
+    "test": "bun test tests/core.test.ts tests/cli.test.ts tests/lilypond.test.ts",
     "test:browser": "playwright test",
     "test:gregorio": "NEUMES_GREGORIO=1 bun test tests/gregorio.test.ts",
     "cli": "bun src/cli.ts",
     "check": "tsc --noEmit",
     "desktop": "cargo run --release --manifest-path desktop/Cargo.toml --",
     "desktop:build": "cargo build --release --manifest-path desktop/Cargo.toml",
-    "test:desktop": "cargo test --manifest-path desktop/Cargo.toml"
+    "test:desktop": "cargo test --manifest-path desktop/Cargo.toml",
+    "release": "bun scripts/release.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.80"

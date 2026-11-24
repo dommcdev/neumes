@@ -1,15 +1,17 @@
 //! Neumes on the desktop: the shared core (`src/core`, run by QuickJS) behind a
 //! native Rune window. `cargo run --release` from `desktop/`, optionally with a
-//! `.gabc` path to open.
+//! `.gabc` or `.ly` path to open.
 
 mod engine;
 mod fonts;
 mod images;
+mod lily;
 mod palette;
 mod raster;
 mod view;
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use rune::prefs::Prefs;
@@ -22,6 +24,14 @@ use engine::Engine;
 const MAX_SIZE: u64 = 4 * 1024 * 1024;
 const PAPER_WIDTH: f32 = 612.0;
 const DRAFT: &str = "draft";
+const EXTENSIONS: &[&str] = &["gabc", "ly"];
+
+/// For work off the UI thread (LilyPond) to report back.
+static APP: OnceLock<rune::AppHandle<State>> = OnceLock::new();
+
+fn is_lily(name: &str) -> bool {
+    name.to_lowercase().ends_with(".ly")
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -41,6 +51,12 @@ pub struct Score {
     pub recovered: bool,
     pub header_height: f32,
     pub view: engine::View,
+}
+
+impl Score {
+    pub fn lily(&self) -> bool {
+        self.view.kind == "ly"
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -99,6 +115,8 @@ pub struct State {
     prefs: Prefs,
     draft_due: Option<f64>,
     pub images: images::Images,
+    /// Counts LilyPond engravings started, so only the latest one opens.
+    engraving: u64,
 }
 
 impl State {
@@ -111,7 +129,7 @@ impl State {
         let mut s = State {
             engine, score: None, zoom: 1.5, raster_zoom: 1.5, zoom_due: None, theme, menu_open: false,
             dialog: None, toast: None, toast_due: 0.0, drop_hover: false, window_width: 1100.0, drag: None,
-            prefs, draft_due: None, images: images::Images::default(),
+            prefs, draft_due: None, images: images::Images::default(), engraving: 0,
         };
         if s.prefs.contains(DRAFT) {
             s.dialog = Some(question("Recover unsaved chords?",
@@ -167,35 +185,66 @@ impl State {
     }
 
     /// Opens `source` in place of the current score, keeping the current one when it fails.
-    fn load(&mut self, tx: &mut Tx, source: String, name: String, path: Option<PathBuf>) -> bool {
-        if !name.to_lowercase().ends_with(".gabc") {
-            self.toast(tx, "Please open a .gabc chant file.");
-            return false;
+    /// A `recovered` draft is not yet written to any file.
+    fn load(&mut self, tx: &mut Tx, source: String, name: String, path: Option<PathBuf>, recovered: bool) {
+        if is_lily(&name) {
+            return self.engrave(tx, source, name, path, recovered);
         }
-        let opened = self.engine.open(&source).and_then(|o| self.engine.view().map(|v| (o, v)));
+        if !name.to_lowercase().ends_with(".gabc") {
+            return self.toast(tx, "Please open a .gabc chant or .ly LilyPond file.");
+        }
+        self.engraving += 1;
+        let opened = self.engine.open(&source);
+        self.opened(tx, opened, source, name, path, recovered);
+    }
+
+    /// LilyPond engraves the score (without its chords) once, off the UI thread.
+    fn engrave(&mut self, tx: &mut Tx, source: String, name: String, path: Option<PathBuf>, recovered: bool) {
+        let music = match self.engine.lily_music(&source) {
+            Ok(music) => music,
+            Err(e) => return self.toast(tx, format!("Could not open score: {e}")),
+        };
+        self.engraving += 1;
+        let id = self.engraving;
+        self.toast(tx, format!("Engraving {name} with LilyPond…"));
+        let include = path.as_ref().and_then(|p| p.parent()).map(Path::to_path_buf);
+        let work = move || {
+            let engraved = lily::engrave(&music, include.as_deref().filter(|d| !d.as_os_str().is_empty()));
+            if let Some(app) = APP.get() {
+                app.update(move |s: &mut State, tx| {
+                    if s.engraving != id { return; }
+                    let opened = engraved.and_then(|e| s.engine.open_lily(&source, &name, &e));
+                    s.opened(tx, opened, source, name, path, recovered);
+                });
+            }
+        };
+        if let Err(e) = rune::task::spawn("lilypond", work) { self.toast(tx, format!("Could not open score: {e}")); }
+    }
+
+    fn opened(&mut self, tx: &mut Tx, opened: Result<engine::Opened, String>, source: String, name: String, path: Option<PathBuf>, recovered: bool) {
+        let opened = opened.and_then(|o| self.engine.view().map(|v| (o, v)));
         match opened {
             Ok((opened, view)) => {
                 self.images.reset();
-                self.score = Some(Score { path, name, disk: source, recovered: false, header_height: opened.header_height, view });
+                self.toast = None;
+                let disk = if recovered { String::new() } else { source };
+                self.score = Some(Score { path, name, disk, recovered, header_height: opened.header_height, view });
                 self.images.header_svg = opened.header;
-                let fit = (self.window_width - if self.window_width < 650.0 { 24.0 } else { 80.0 }) / PAPER_WIDTH;
+                let width = self.score.as_ref().map_or(PAPER_WIDTH, |s| if s.lily() { s.view.width } else { PAPER_WIDTH });
+                let fit = (self.window_width - if self.window_width < 650.0 { 24.0 } else { 80.0 }) / width;
                 self.zoom = fit.min(1.6).clamp(0.3, 5.0);
                 self.raster_zoom = self.zoom;
                 tx.scroll_to_instant("workspace", 0.0, 0.0);
                 self.refresh(tx);
-                true
             }
-            Err(e) => {
-                self.toast(tx, format!("Could not open score: {e}"));
-                false
-            }
+            Err(e) => self.toast(tx, format!("Could not open score: {e}")),
         }
     }
 
     fn load_path(&mut self, tx: &mut Tx, path: PathBuf) {
         let name = file_name(&path);
         match read_score(&path) {
-            Ok(source) => { self.load(tx, source, name, Some(path)); }
+            Ok(source) => self.load(tx, source, name, Some(path), false),
             Err(e) => self.toast(tx, format!("Could not open score: {e}")),
         }
     }
@@ -216,7 +265,10 @@ impl State {
         match then {
             Then::OpenPath(path) => self.load_path(tx, path),
             Then::Open => {
-                let options = FileDialogOptions { title: "Open a chant".into(), ..Default::default() }.filter("Gregorian chant", &["gabc"]);
+                let options = FileDialogOptions { title: "Open a score".into(), ..Default::default() }
+                    .filter("Scores", EXTENSIONS)
+                    .filter("Gregorian chant", &["gabc"])
+                    .filter("LilyPond", &["ly"]);
                 tx.open_file(options, |s: &mut State, result, tx| match result {
                     Ok(Some(path)) => s.load_path(tx, path),
                     Ok(None) => {}
@@ -249,10 +301,11 @@ impl State {
                 }
             }
             _ => {
-                let options = FileDialogOptions { title: "Save chant".into(), file_name: Some(score.name.clone()), ..Default::default() }
-                    .filter("Gregorian chant", &["gabc"]);
+                let (kind, extension) = if score.lily() { ("LilyPond", "ly") } else { ("Gregorian chant", "gabc") };
+                let options = FileDialogOptions { title: "Save score".into(), file_name: Some(score.name.clone()), ..Default::default() }
+                    .filter(kind, &[extension]);
                 tx.save_file(options, move |s: &mut State, result, tx| match result {
-                    Ok(Some(path)) => s.write(tx, with_extension(path, "gabc"), source.clone(), after.clone()),
+                    Ok(Some(path)) => s.write(tx, with_extension(path, extension), source.clone(), after.clone()),
                     Ok(None) => {}
                     Err(e) => s.toast(tx, format!("Could not save: {e}")),
                 });
@@ -280,6 +333,7 @@ impl State {
 
     fn export_pdf(&mut self, tx: &mut Tx) {
         let Some(score) = &self.score else { return };
+        if score.lily() { return self.export_lily(tx); }
         let pages = match self.engine.pages() {
             Ok(pages) => pages,
             Err(e) => return self.toast(tx, format!("Could not export: {e}")),
@@ -297,6 +351,38 @@ impl State {
         });
     }
 
+    /// LilyPond prints the score, with its chords, off the UI thread.
+    fn export_lily(&mut self, tx: &mut Tx) {
+        let Some(score) = &self.score else { return };
+        let source = match self.engine.serialize() {
+            Ok(source) => source,
+            Err(e) => return self.toast(tx, format!("Could not export: {e}")),
+        };
+        let include = score.path.as_ref().and_then(|p| p.parent()).filter(|d| !d.as_os_str().is_empty()).map(Path::to_path_buf);
+        let name = format!("{}.pdf", score.name.strip_suffix(".ly").unwrap_or(&score.name));
+        self.refresh(tx);
+        let options = FileDialogOptions { title: "Export to PDF".into(), file_name: Some(name), ..Default::default() }.filter("PDF", &["pdf"]);
+        tx.save_file(options, move |s: &mut State, result, tx| match result {
+            Ok(Some(path)) => {
+                s.toast(tx, "Printing with LilyPond…");
+                let (source, include) = (source.clone(), include.clone());
+                let work = move || {
+                    let written = lily::pdf(&source, include.as_deref())
+                        .and_then(|pdf| write_atomic(&with_extension(path, "pdf"), &pdf).map_err(|e| e.to_string()));
+                    if let Some(app) = APP.get() {
+                        app.update(move |s: &mut State, tx| match written {
+                            Ok(()) => s.toast(tx, "Exported to PDF."),
+                            Err(e) => s.toast(tx, format!("Could not export: {e}")),
+                        });
+                    }
+                };
+                if let Err(e) = rune::task::spawn("lilypond", work) { s.toast(tx, format!("Could not export: {e}")); }
+            }
+            Ok(None) => {}
+            Err(e) => s.toast(tx, format!("Could not export: {e}")),
+        });
+    }
+
     pub fn action(&mut self, tx: &mut Tx, name: &str) {
         self.menu_open = false;
         match name {
@@ -306,7 +392,7 @@ impl State {
             "export-pdf" => self.export_pdf(tx),
             "shortcuts" => self.dialog = Some(Dialog::Shortcuts),
             "about" => self.dialog = Some(question("About Neumes",
-                "Neumes is for adding accompaniment to Gregorian chant scores. Open a .gabc file, add chords above the notes, and save your score or export it to PDF.",
+                "Neumes is for adding accompaniment to Gregorian chant and LilyPond scores. Open a .gabc or .ly file, add chords above the notes, and save your score or export it to PDF. LilyPond scores need LilyPond installed.",
                 vec![("close", "Close", Style::Plain)], Purpose::About)),
             "zoom-in" if self.score.is_some() => self.set_zoom(tx, self.zoom * 1.15),
             "zoom-out" if self.score.is_some() => self.set_zoom(tx, self.zoom / 1.15),
@@ -337,11 +423,8 @@ impl State {
             (Purpose::DiskChanged, "copy") => self.save(tx, true, None),
             (Purpose::Recover, "restore") => {
                 let draft: Option<Draft> = self.prefs.get(DRAFT);
-                if let Some(draft) = draft && self.load(tx, draft.source, draft.name, None) {
-                    // Not yet written to any file: keep the draft until a save, and say it's unsaved.
-                    if let Some(score) = self.score.as_mut() { score.disk.clear(); score.recovered = true; }
-                    self.refresh(tx);
-                }
+                // Not yet written to any file: keep the draft until a save, and say it's unsaved.
+                if let Some(draft) = draft { self.load(tx, draft.source, draft.name, None, true); }
             }
             (Purpose::Recover, "discard") => { let _ = self.prefs.remove(DRAFT); }
             _ => {}
@@ -410,6 +493,10 @@ fn file_name(path: &Path) -> String {
     path.file_name().map_or_else(|| "chant.gabc".into(), |n| n.to_string_lossy().into_owned())
 }
 
+fn is_score(path: &Path) -> bool {
+    path.extension().is_some_and(|e| EXTENSIONS.iter().any(|x| e.eq_ignore_ascii_case(x)))
+}
+
 fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
     let has = path.extension().is_some_and(|e| e.eq_ignore_ascii_case(extension));
     if has { path } else { let mut p = path.into_os_string(); p.push("."); p.push(extension); p.into() }
@@ -417,7 +504,7 @@ fn with_extension(path: PathBuf, extension: &str) -> PathBuf {
 
 fn read_score(path: &Path) -> Result<String, String> {
     let size = std::fs::metadata(path).map_err(|e| e.to_string())?.len();
-    if size > MAX_SIZE { return Err("GABC files must be smaller than 4 MiB.".into()); }
+    if size > MAX_SIZE { return Err("Scores must be smaller than 4 MiB.".into()); }
     std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
@@ -513,7 +600,9 @@ fn on_key(s: &mut State, event: &KeyEvent, tx: &mut Tx) -> bool {
     if handled {
         s.refresh(tx);
         if reveal && let Some(score) = &s.score {
-            tx.scroll_into_view(format!("staff-{}", score.view.cursor.staff));
+            // A LilyPond page is taller than the window: reveal the note, not the page.
+            if score.lily() { tx.scroll_into_view("note-cursor"); }
+            else { tx.scroll_into_view(format!("staff-{}", score.view.cursor.staff)); }
         }
     }
     handled
@@ -558,8 +647,9 @@ fn main() {
         on_key: Some(on_key),
         ..AppSpec::new("Neumes", (1100.0, 860.0), init, view::view)
     };
-    let path = std::env::args_os().skip(1).map(PathBuf::from).find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("gabc")));
+    let path = std::env::args_os().skip(1).map(PathBuf::from).find(|p| is_score(p));
     let app = rune::App::new(spec).on_close(|s: &mut State, _| s.write_draft());
+    let _ = APP.set(app.handle());
     if let Some(path) = path {
         app.handle().update(move |s: &mut State, tx| s.load_path(tx, path));
     }

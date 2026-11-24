@@ -4,8 +4,9 @@
  */
 import { ScoreDocument } from '../core/document.ts';
 import { Editor } from '../core/editor.ts';
-import { ENGRAVING } from '../core/engraving.ts';
+import { ENGRAVING, FONT } from '../core/engraving.ts';
 import { editorKey, movesCursor, type KeyInput } from '../core/keys.ts';
+import { chordMarkup, LilyDocument, lilyMusic, readGeometry, type Geometry } from '../core/lilypond.ts';
 import { escapeXml, renderScore, scorePages, staffPad, SCORE_WIDTH, type Exsurge, type TextMeasurer } from '../core/render.ts';
 
 declare const exsurge: Exsurge;
@@ -21,8 +22,10 @@ const measure: TextMeasurer = {
 };
 
 let editor: Editor | null = null;
-// Exsurge's staff SVG without the outer element, by staff.
+// Exsurge's staff SVG without the outer element, by staff; for LilyPond, its pages.
 let staffBodies: string[] = [];
+/** The open LilyPond score's engraving, which chord edits never change. */
+let lily: { geometry: Geometry; fileName: string; chordSize: number } | null = null;
 let drag: { chord: boolean; active: boolean } | null = null;
 
 function current(): Editor {
@@ -48,8 +51,8 @@ function headerSvg(doc: ScoreDocument): { svg: string; height: number } {
   return { svg: wrap(lines.join(''), y), height: y };
 }
 
-function wrap(body: string, height: number): string {
-  const width = SCORE_WIDTH + 2 * BLEED;
+function wrap(body: string, height: number, inner: number = SCORE_WIDTH): string {
+  const width = inner + 2 * BLEED;
   return `<svg class="Exsurge" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height + 2 * BLEED}" viewBox="${-BLEED} ${-BLEED} ${width} ${height + 2 * BLEED}"><g font-family="TeX Gyre Pagella" fill="#000">${body}</g></svg>`;
 }
 
@@ -66,12 +69,33 @@ const api = {
     const next = new Editor(doc, preview, measure);
     editor = next;
     drag = null;
+    lily = null;
     staffBodies = preview.staves.map(staff => staff.svg.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, ''));
     const header = headerSvg(doc);
     return { header: header.svg, headerHeight: header.height };
   },
 
-  close(): void { editor = null; staffBodies = []; drag = null; },
+  /** What LilyPond should engrave for the editor: the score without its chords. */
+  lilyMusic(source: string): string { return lilyMusic(source); },
+
+  /** Opens a LilyPond score from LilyPond's engraving of `lilyMusic(source)`:
+   * `geometry` with point-and-click links into `file`, `display` to show.
+   */
+  openLily(source: string, fileName: string, geometry: string[], file: string, display: string[]): { header: string; headerHeight: number } {
+    if (source.length > 4 * 1024 * 1024) throw new Error('LilyPond files must be smaller than 4 MiB.');
+    const shape = readGeometry(geometry, file);
+    const doc = new LilyDocument(source, shape, fileName);
+    const chordSize = 2.2 * shape.space;
+    const next = new Editor(doc, doc.preview(display), measure, `bold ${chordSize}px ${FONT}`);
+    editor = next;
+    drag = null;
+    lily = { geometry: shape, fileName, chordSize };
+    // LilyPond's SVG, without the XML declaration, nested as it is.
+    staffBodies = display.map(svg => svg.replace(/^<\?xml[^>]*>\s*/, ''));
+    return { header: '', headerHeight: 0 };
+  },
+
+  close(): void { editor = null; staffBodies = []; drag = null; lily = null; },
 
   /** Everything the shell draws except the staff images. `key` changes whenever
    * a staff's image (music plus chords) does.
@@ -80,7 +104,23 @@ const api = {
     const ed = current();
     const cursor = ed.position;
     const selected = ed.selected ? ed.placed.find(p => p.note === ed.selected) : undefined;
+    if (lily) return {
+      kind: 'ly',
+      width: ed.preview.width,
+      dirty: ed.doc.dirty,
+      canUndo: ed.canUndo,
+      canRedo: ed.canRedo,
+      editing: ed.editing,
+      name: ed.doc.name,
+      cursor: { staff: cursor.staff, x: cursor.x, y: cursor.y, noteY: cursor.noteY },
+      selected: selected ? { staff: selected.staff, x: selected.x, top: selected.top, bottom: selected.bottom, width: selected.width } : null,
+      // Pages never change; their chords are a separate image.
+      staves: ed.preview.staves.map((spec, index) => ({ height: spec.height, gap: spec.advance - spec.height, pad: 0, key: 'page',
+        chords: JSON.stringify(chordMarkup(ed.doc, ed.preview, ed.placed, index, lily!.chordSize)) })),
+    };
     return {
+      kind: 'gabc',
+      width: SCORE_WIDTH,
       dirty: ed.doc.dirty,
       canUndo: ed.canUndo,
       canRedo: ed.canRedo,
@@ -91,7 +131,7 @@ const api = {
       staves: ed.preview.staves.map((spec, index) => {
         const pad = staffPad(ed.placed, index);
         const chords = ed.placed.filter(p => p.staff === index).map(p => [p.x, p.baseline, chordText(ed, p.note)]);
-        return { height: spec.height + pad, gap: spec.advance - spec.height, pad, key: JSON.stringify([pad, chords]) };
+        return { height: spec.height + pad, gap: spec.advance - spec.height, pad, key: JSON.stringify([pad, chords]), chords: '' };
       }),
     };
   },
@@ -100,10 +140,18 @@ const api = {
   staffSvg(index: number): string {
     const ed = current();
     const spec = ed.preview.staves[index];
+    if (lily) return wrap(staffBodies[index], spec.height, spec.width);
     const pad = staffPad(ed.placed, index);
     const chords = ed.placed.filter(p => p.staff === index)
       .map(p => `<text x="${p.x}" y="${p.baseline}" font-size="${ENGRAVING.chordSize}" font-weight="bold">${escapeXml(chordText(ed, p.note))}</text>`).join('');
     return wrap(`<g transform="translate(0,${pad})">${staffBodies[index]}${chords}</g>`, spec.height + pad);
+  },
+
+  /** A LilyPond page's chords, as an SVG the size of `staffSvg(index)`. */
+  chordSvg(index: number): string {
+    const ed = current();
+    const spec = ed.preview.staves[index];
+    return wrap(lily ? chordMarkup(ed.doc, ed.preview, ed.placed, index, lily.chordSize) : '', spec.height, spec.width);
   },
 
   /** Returns whether the key was used, and whether the cursor should be revealed. */
@@ -159,13 +207,14 @@ const api = {
   /** After a successful write, that text is the new clean state. */
   saved(source: string): void {
     const ed = current();
-    ed.doc = new ScoreDocument(source);
+    ed.doc = lily ? new LilyDocument(source, lily.geometry, lily.fileName) : new ScoreDocument(source);
   },
 
   /** Letter pages for PDF export, one SVG per page. */
   pages(): string[] {
     const ed = current();
     ed.finish();
+    if (!(ed.doc instanceof ScoreDocument)) throw new Error('LilyPond scores are exported by LilyPond.');
     return scorePages(ed.doc, ed.preview, ed.placed);
   },
 
